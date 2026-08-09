@@ -1,0 +1,48 @@
+{
+  "name": "reversebhw",
+  "version": "0.1.0",
+  "description": "A headless TypeScript SDK for BlackHatWorld's XenForo 2 web API.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./solvers/uncaptcha": {
+      "types": "./dist/solvers/uncaptcha.d.ts",
+      "import": "./dist/solvers/uncaptcha.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun run build:clean && bun run build:js && bun run build:types",
+    "build:clean": "bun -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build:js": "bun build ./src/index.ts ./src/solvers/uncaptcha.ts --outdir ./dist --target node --format esm --sourcemap=external --packages external",
+    "build:types": "tsc --emitDeclarationOnly",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "keywords": [
+    "blackhatworld",
+    "bhw",
+    "xenforo",
+    "sdk",
+    "typescript",
+    "bun"
+  ],
+  "packageManager": "bun@1.3.14",
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "wreq-js": "3.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  }
+}

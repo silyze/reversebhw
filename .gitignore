@@ -1,0 +1,29 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Secrets — keep .env.example tracked
+.env
+.env.local
+.env.*.local
+
+# Live-run scripts (contain per-run credential wiring)
+scripts
+
+# IDE / editor
+.idea
+.vscode
+
+# Agent persona instructions — never commit
+AGENTS.md
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Diagnostics from live runs
+*.png
+*.log
