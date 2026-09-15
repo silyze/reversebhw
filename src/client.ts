@@ -59,6 +59,13 @@ import {
   type BhwThreadPost,
 } from "./thread.js";
 import {
+  createBhwThread,
+  fetchBhwThreadCreationForm,
+  type BhwCreateThreadInput,
+  type BhwCreateThreadResult,
+  type BhwThreadCreationForm,
+} from "./create-thread.js";
+import {
   deleteBhwPost,
   editBhwPost,
   quoteBhwPost,
@@ -395,6 +402,32 @@ export class BhwClient {
   async saveDraft(input: BhwDraftInput): Promise<void> {
     const token = await this.ensureToken(input.signal);
     return saveBhwDraft(this.#transport, this.origin, token, input);
+  }
+
+  /**
+   * Create a new thread in an explicitly supplied BHW forum.
+   *
+   * The forum URL may be a forum landing page or its direct new-thread
+   * composer. The live composer is fetched first so its current CSRF token,
+   * action URL, and hidden defaults are submitted intact.
+   */
+  async createThread(
+    input: BhwCreateThreadInput,
+  ): Promise<BhwCreateThreadResult> {
+    return createBhwThread(this.#transport, this.origin, input);
+  }
+
+  /** Fetch the live new-thread composer metadata for a BHW forum. */
+  async fetchThreadCreationForm(
+    forumUrl: string | URL,
+    signal?: AbortSignal,
+  ): Promise<BhwThreadCreationForm> {
+    return fetchBhwThreadCreationForm(
+      this.#transport,
+      this.origin,
+      forumUrl,
+      signal,
+    );
   }
 
   /* -------------------------------------------------------------------------

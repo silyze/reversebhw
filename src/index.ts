@@ -77,6 +77,14 @@ export {
   type BhwThreadPost,
 } from "./thread.js";
 export {
+  createBhwThread,
+  fetchBhwThreadCreationForm,
+  parseBhwThreadCreationForm,
+  type BhwCreateThreadInput,
+  type BhwCreateThreadResult,
+  type BhwThreadCreationForm,
+} from "./create-thread.js";
+export {
   BhwPostError,
   deleteBhwPost,
   editBhwPost,

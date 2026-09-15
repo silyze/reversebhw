@@ -110,6 +110,15 @@ Requires a logged-in session (`client.login`).
 ```ts
 await client.login({ username: "you", password: "…" });
 
+// Create a thread. Pass the forum landing page or its direct composer URL;
+// reversebhw discovers the current form action and hidden XF fields first.
+const newThread = await client.createThread({
+  forumUrl: "https://www.blackhatworld.com/seo/",
+  title: "A clearly titled discussion",
+  messageHtml: "<p>Original post body.</p>",
+});
+console.log(newThread.threadId, newThread.redirect);
+
 await client.reply({
   threadId: 1824185,
   slug: page.thread.slug,          // from viewThread
@@ -193,7 +202,7 @@ Two things BHW verifies that your solver must get right:
 
 | Import | Contents |
 | --- | --- |
-| `reversebhw` | `BhwClient`, sessions, WAF helpers, XF2 helpers, all flow functions (`registerBhwAccount`, `fetchBhwThread`, `fetchBhwWhatsNew`, `loginBhwAccount`, post ops), types |
+| `reversebhw` | `BhwClient`, sessions, WAF helpers, XF2 helpers, all flow functions (`registerBhwAccount`, `createBhwThread`, `fetchBhwThread`, `fetchBhwWhatsNew`, `loginBhwAccount`, post ops), types |
 | `reversebhw/solvers/uncaptcha` | `Uncaptcha`, `UncaptchaError`, `UncaptchaOptions` |
 
 Low-level building blocks if you need them:
