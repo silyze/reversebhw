@@ -45,6 +45,11 @@ import {
   type BhwWhatsNewPage,
 } from "./whatsnew.js";
 import {
+  fetchBhwSearch,
+  type BhwSearchOptions,
+  type BhwSearchPage,
+} from "./search.js";
+import {
   fetchBhwThread,
   replyToBhwThread,
   saveBhwDraft,
@@ -358,6 +363,29 @@ export class BhwClient {
    */
   async whatsNew(options: BhwWhatsNewOptions = {}): Promise<BhwWhatsNewPage> {
     const page = await fetchBhwWhatsNew(this.#transport, this.origin, options);
+    this.#xfToken = page.xfToken;
+    return page;
+  }
+
+  /* -------------------------------------------------------------------------
+   * Search
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Search BHW for matching threads via XenForo's standard read-only GET
+   * endpoint. This works for public pages as well as the client's current
+   * authenticated session, when one exists.
+   */
+  async search(
+    keywords: string,
+    options: BhwSearchOptions = {},
+  ): Promise<BhwSearchPage> {
+    const page = await fetchBhwSearch(
+      this.#transport,
+      this.origin,
+      keywords,
+      options,
+    );
     this.#xfToken = page.xfToken;
     return page;
   }

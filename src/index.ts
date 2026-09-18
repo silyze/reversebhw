@@ -110,6 +110,15 @@ export {
   type BhwWhatsNewPage,
 } from "./whatsnew.js";
 export {
+  BhwSearchError,
+  fetchBhwSearch,
+  parseBhwSearchPage,
+  type BhwSearchItem,
+  type BhwSearchOptions,
+  type BhwSearchOrder,
+  type BhwSearchPage,
+} from "./search.js";
+export {
   BhwClient,
   type BhwClientOptions,
 } from "./client.js";

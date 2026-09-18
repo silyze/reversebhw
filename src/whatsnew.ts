@@ -101,7 +101,7 @@ export async function fetchBhwWhatsNew(
 
   if (html.includes("Just a moment") || html.includes("cf-challenge")) {
     throw new BhwWhatsNewError(
-      "What's-new feed returned a Cloudflare challenge — solve the WAF before retrying",
+      "What's-new feed returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
     );
   }
 

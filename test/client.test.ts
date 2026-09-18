@@ -112,6 +112,27 @@ describe("BhwClient with mock transport", () => {
     expect(await client.confirmEmail("https://www.blackhatworld.com/account-confirmation/u.1/email?c=x")).toBe(false);
   });
 
+  test("search delegates to the standard thread-search endpoint", async () => {
+    const session = mockSession((url) => {
+      expect(url.pathname).toBe("/search/search");
+      expect(url.searchParams.get("keywords")).toBe("linkedin outreach");
+      expect(url.searchParams.get("search_type")).toBe("post");
+      expect(url.searchParams.get("c[content]")).toBe("thread");
+      return {
+        status: 200,
+        body: `
+          <input type="hidden" name="_xfToken" value="1700000000,abc123">
+          <div class="structItem structItem--thread js-threadListItem-99">
+            <div class="structItem-title"><a href="/seo/linkedin-outreach.99/">LinkedIn outreach</a></div>
+          </div>`,
+      };
+    });
+    const client = new BhwClient({ session });
+    const page = await client.search("linkedin outreach");
+    expect(page.items[0]!.threadId).toBe(99);
+    expect(client.xfToken).toBe("1700000000,abc123");
+  });
+
   test("requests auto-clear Cloudflare challenges when a solver is set", async () => {
     let fetches = 0;
     const jar: Record<string, string> = {};

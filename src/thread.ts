@@ -48,6 +48,8 @@ export interface BhwThreadPage {
   readonly xfToken: string;
   /** Form attachment hash from the quick-reply form. */
   readonly attachmentHash: string;
+  /** True only when the live page exposes an enabled quick-reply form. */
+  readonly canReply: boolean;
 }
 
 export interface BhwFetchThreadOptions {
@@ -120,8 +122,16 @@ export async function fetchBhwThread(
 
   if (html.includes("Just a moment") || html.includes("cf-challenge")) {
     throw new BhwThreadError(
-      "Thread page returned a Cloudflare challenge — solve the WAF before retrying",
+      "Thread page returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
     );
+  }
+  if (!response.ok) {
+    const detail = response.status === 404
+      ? "Thread was not found"
+      : response.status === 401 || response.status === 403
+        ? `Thread request returned HTTP ${response.status} — manual account attention is required; do not retry automatically`
+        : `Thread request failed with HTTP ${response.status}`;
+    throw new BhwThreadError(detail);
   }
 
   // Recover the canonical slug from the final (possibly redirected) URL.
@@ -194,6 +204,15 @@ export function parseBhwThreadPage(
     $('input[name="attachment_hash"]').attr("value") ??
     $('input[name="attachment_hash_combined"]').attr("value") ??
     "";
+  const quickReplyForm = $(
+    'form[action*="add-reply"], form.js-quickReply, form[data-xf-init*="quick-reply"]',
+  ).first();
+  const closedNotice = $(
+    ".blockMessage--error, .blockMessage--important, .blockMessage--warning, .message--notice, .js-threadStatus",
+  ).text();
+  const canReply = quickReplyForm.length > 0
+    && quickReplyForm.find(':input:disabled').length === 0
+    && !/\b(thread\s+is\s+closed|closed\s+for\s+further\s+replies|locked)\b/i.test(closedNotice);
 
   const postCount = parseInt(
     $(".block-outer dl.pairs > dd").first().text().replace(/[^0-9]/g, ""),
@@ -210,6 +229,7 @@ export function parseBhwThreadPage(
     pagination,
     xfToken,
     attachmentHash,
+    canReply,
   };
 }
 

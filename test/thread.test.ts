@@ -86,6 +86,23 @@ describe("parseBhwThreadPage", () => {
     expect(page.attachmentHash).toBe("attach_hash_abc");
   });
 
+  test("recognizes an enabled quick-reply form", () => {
+    const html = threadPageHtml() + `
+      <form class="js-quickReply" action="/threads/test-thread.999/add-reply">
+        <textarea name="message"></textarea>
+      </form>`;
+    expect(parseBhwThreadPage(html, 999, "test-thread").canReply).toBe(true);
+  });
+
+  test("does not mark a closed thread as replyable", () => {
+    const html = threadPageHtml() + `
+      <form class="js-quickReply" action="/threads/test-thread.999/add-reply">
+        <textarea name="message"></textarea>
+      </form>
+      <div class="blockMessage--important">This thread is closed for further replies.</div>`;
+    expect(parseBhwThreadPage(html, 999, "test-thread").canReply).toBe(false);
+  });
+
   test("parses posts with all fields", () => {
     const page = parseBhwThreadPage(threadPageHtml(), 999, "slug");
     expect(page.posts).toHaveLength(1);
