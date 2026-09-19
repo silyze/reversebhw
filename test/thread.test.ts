@@ -3,7 +3,16 @@ import { describe, test, expect } from "bun:test";
 import {
   BhwThreadError,
   parseBhwThreadPage,
+  replyToBhwThread,
 } from "../src/thread.js";
+import type {
+  BhwFetchInit,
+  BhwFetchResponse,
+  BhwFetchTransport,
+} from "../src/session.js";
+
+const ORIGIN = new URL("https://www.blackhatworld.com/");
+const TOKEN = "1700000000,abc123def456";
 
 function threadPageHtml(opts: {
   title?: string;
@@ -88,12 +97,22 @@ describe("parseBhwThreadPage", () => {
 
   test("recognizes an enabled quick-reply form", () => {
     const html = threadPageHtml() + `
-      <form class="js-quickReply" action="/seo/test-thread.999/add-reply">
+      <form class="js-quickReply" action="/seo/test-thread.999/add-reply" method="post">
+        <input type="hidden" name="attachment_hash" value="reply-attachment-hash">
+        <input type="hidden" name="attachment_hash_combined" value="reply-combined-hash">
+        <input type="hidden" name="custom_live_field" value="preserve-me">
         <textarea name="message"></textarea>
       </form>`;
     const page = parseBhwThreadPage(html, 999, "test-thread");
     expect(page.canReply).toBe(true);
     expect(page.replyAction).toBe("/seo/test-thread.999/add-reply");
+    expect(page.replyMethod).toBe("POST");
+    expect(page.attachmentHash).toBe("reply-attachment-hash");
+    expect(page.replyFormFields).toEqual({
+      attachment_hash: "reply-attachment-hash",
+      attachment_hash_combined: "reply-combined-hash",
+      custom_live_field: "preserve-me",
+    });
   });
 
   test("does not mark a closed thread as replyable", () => {
@@ -267,5 +286,66 @@ describe("parseBhwThreadPage", () => {
     expect(page.pagination.currentPage).toBe(3);
     expect(page.pagination.totalPages).toBe(3);
     expect(page.pagination.nextPageUrl).toBeUndefined();
+  });
+});
+
+describe("replyToBhwThread", () => {
+  test("submits to BHW's live action and preserves its hidden form fields", async () => {
+    const calls: Array<{ url: URL; init?: BhwFetchInit }> = [];
+    const transport: BhwFetchTransport = {
+      async fetch(url: string | URL, init?: BhwFetchInit): Promise<BhwFetchResponse> {
+        const resolved = url instanceof URL ? url : new URL(url, ORIGIN);
+        calls.push({ url: resolved, init });
+        return {
+          status: 200,
+          ok: true,
+          url: resolved.href,
+          text: async () => "",
+          json: async () => ({ status: "ok", redirect: "/seo/test-thread.999/post-98765" }),
+        };
+      },
+    };
+
+    const result = await replyToBhwThread(transport, ORIGIN, TOKEN, {
+      threadId: 999,
+      slug: "test-thread",
+      messageHtml: "<p>Useful reply</p>",
+      replyAction: "/seo/test-thread.999/add-reply",
+      replyMethod: "POST",
+      replyFormFields: {
+        attachment_hash: "live-hash",
+        attachment_hash_combined: "live-combined-value",
+        custom_live_field: "preserve-me",
+        _xfToken: "stale-token",
+      },
+      attachmentHash: "live-hash",
+      lastDate: 1700000000,
+    });
+
+    expect(result).toEqual({ postId: 98765, redirect: "/seo/test-thread.999/post-98765" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url.pathname).toBe("/seo/test-thread.999/add-reply");
+    expect(calls[0]!.init?.headers?.referer).toBe("https://www.blackhatworld.com/seo/test-thread.999/");
+    const body = calls[0]!.init?.body as FormData;
+    expect(body.get("custom_live_field")).toBe("preserve-me");
+    expect(body.get("attachment_hash_combined")).toBe("live-combined-value");
+    expect(body.get("_xfToken")).toBe(TOKEN);
+    expect(body.get("message_html")).toBe("<p>Useful reply</p>");
+    expect(body.get("last_date")).toBe("1700000000");
+  });
+
+  test("blocks a quick-reply form that does not use POST", async () => {
+    const transport: BhwFetchTransport = {
+      async fetch(): Promise<BhwFetchResponse> {
+        throw new Error("A GET reply form must not be submitted");
+      },
+    };
+
+    await expect(replyToBhwThread(transport, ORIGIN, TOKEN, {
+      threadId: 999,
+      slug: "test-thread",
+      messageHtml: "<p>Useful reply</p>",
+      replyMethod: "GET",
+    })).rejects.toThrow(BhwThreadError);
   });
 });

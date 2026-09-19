@@ -50,6 +50,14 @@ export interface BhwThreadPage {
   readonly attachmentHash: string;
   /** Exact quick-reply action emitted by BHW's live form. */
   readonly replyAction: string;
+  /** Method declared by BHW's live quick-reply form. */
+  readonly replyMethod: "POST" | "GET";
+  /**
+   * Hidden fields from BHW's live quick-reply form. These are carried into a
+   * reply submission without logging their values. `_xfToken`, editor text,
+   * and live-update fields are refreshed by the caller before submission.
+   */
+  readonly replyFormFields: Readonly<Record<string, string>>;
   /** True only when the live page exposes an enabled quick-reply form. */
   readonly canReply: boolean;
 }
@@ -72,6 +80,10 @@ export interface BhwReplyInput {
   readonly messageHtml: string;
   /** Exact quick-reply action obtained from a live `BhwThreadPage`. */
   readonly replyAction?: string;
+  /** Method obtained from a live `BhwThreadPage`. */
+  readonly replyMethod?: "POST" | "GET";
+  /** Hidden fields obtained from a live `BhwThreadPage`. */
+  readonly replyFormFields?: Readonly<Record<string, string>>;
   /** Post ID being replied to (for threaded quote replies). */
   readonly parentId?: number;
   readonly attachmentHash?: string;
@@ -204,13 +216,17 @@ export function parseBhwThreadPage(
 
   const pagination = parseXfPagination($);
 
-  const attachmentHash =
-    $('input[name="attachment_hash"]').attr("value") ??
-    $('input[name="attachment_hash_combined"]').attr("value") ??
-    "";
   const quickReplyForm = $(
     'form[action*="add-reply"], form.js-quickReply, form[data-xf-init*="quick-reply"]',
   ).first();
+  const replyFormFields = hiddenFormFields($, quickReplyForm);
+  const attachmentHash =
+    replyFormFields.attachment_hash ??
+    replyFormFields.attachment_hash_combined ??
+    "";
+  const replyMethod = (quickReplyForm.attr("method") ?? "POST").toUpperCase() === "GET"
+    ? "GET"
+    : "POST";
   const closedNotice = $(
     ".blockMessage--error, .blockMessage--important, .blockMessage--warning, .message--notice, .js-threadStatus",
   ).text();
@@ -234,6 +250,8 @@ export function parseBhwThreadPage(
     xfToken,
     attachmentHash,
     replyAction: quickReplyForm.attr("action") ?? "",
+    replyMethod,
+    replyFormFields,
     canReply,
   };
 }
@@ -255,24 +273,29 @@ export async function replyToBhwThread(
   input: BhwReplyInput,
 ): Promise<BhwReplyResult> {
   const threadPath = `/threads/${input.slug}.${input.threadId}/`;
-  const target = replyTarget(input.replyAction, threadPath, origin);
+  const target = replyTarget(input.replyAction, input.replyMethod, threadPath, origin);
   const requestUri = target.pathname.replace(/\/add-reply$/, "/") || threadPath;
   const referer = new URL(requestUri, origin).href;
   const attachmentHash = input.attachmentHash ?? "";
   const lastDate = input.lastDate ?? 0;
 
   const body = new FormData();
+  for (const [name, value] of Object.entries(input.replyFormFields ?? {})) {
+    body.set(name, value);
+  }
   body.set("_xfToken", xfToken);
   body.set("message_html", input.messageHtml);
   body.set("attachment_hash", attachmentHash);
-  body.set(
-    "attachment_hash_combined",
-    JSON.stringify({
-      type: "post",
-      context: { thread_id: input.threadId },
-      hash: attachmentHash,
-    }),
-  );
+  if (!body.has("attachment_hash_combined")) {
+    body.set(
+      "attachment_hash_combined",
+      JSON.stringify({
+        type: "post",
+        context: { thread_id: input.threadId },
+        hash: attachmentHash,
+      }),
+    );
+  }
   body.set("last_date", String(lastDate));
   body.set("last_known_date", String(lastDate));
   if (input.parentId !== undefined) {
@@ -308,12 +331,34 @@ export async function replyToBhwThread(
   return { postId, redirect };
 }
 
-function replyTarget(replyAction: string | undefined, threadPath: string, origin: URL): URL {
+function replyTarget(
+  replyAction: string | undefined,
+  replyMethod: "POST" | "GET" | undefined,
+  threadPath: string,
+  origin: URL,
+): URL {
+  if (replyMethod !== undefined && replyMethod !== "POST") {
+    throw new BhwThreadError("BHW's live quick-reply form does not use POST; reply submission is blocked.");
+  }
   const target = new URL(replyAction || `${threadPath}add-reply`, origin);
   if (target.origin !== origin.origin || !/\/add-reply$/.test(target.pathname)) {
     throw new BhwThreadError("The live quick-reply form has an invalid action URL.");
   }
   return target;
+}
+
+function hiddenFormFields(
+  $: CheerioAPI,
+  $form: ReturnType<CheerioAPI>,
+): Record<string, string> {
+  if ($form.length === 0) return {};
+  const fields: Record<string, string> = {};
+  $form.find("input[type=hidden][name]").each((_, el) => {
+    const $input = $(el);
+    const name = $input.attr("name");
+    if (name !== undefined) fields[name] = $input.attr("value") ?? "";
+  });
+  return fields;
 }
 
 /* ---------------------------------------------------------------------------
