@@ -223,6 +223,8 @@ export function parseBhwThreadPage(
   const attachmentHash =
     replyFormFields.attachment_hash ??
     replyFormFields.attachment_hash_combined ??
+    $('input[name="attachment_hash"]').attr("value") ??
+    $('input[name="attachment_hash_combined"]').attr("value") ??
     "";
   const replyMethod = (quickReplyForm.attr("method") ?? "POST").toUpperCase() === "GET"
     ? "GET"
