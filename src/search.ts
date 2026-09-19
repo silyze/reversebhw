@@ -63,16 +63,25 @@ export class BhwSearchError extends Error {
   override readonly name = "BhwSearchError";
 }
 
+type BhwSearchForm = {
+  action: URL;
+  method: "GET" | "POST";
+  controls: URLSearchParams;
+  queryField: string;
+  orderField?: string;
+};
+
 /* ---------------------------------------------------------------------------
  * Fetch & parse
  * ------------------------------------------------------------------------- */
 
 /**
- * Search BHW through its standard results-page GET route.
+ * Search BHW through its own standard search form.
  *
  * BHW creates a temporary search-result set and redirects to
- * `/search/{resultSetId}/?q=...&o=date`. The request is read-only and
- * intentionally does not try to solve Cloudflare challenges.
+ * `/search/{resultSetId}/?q=...&o=date`. Its form fields can vary by theme,
+ * so the form is read first and submitted with its declared method. The flow
+ * is read-only and intentionally does not try to solve Cloudflare challenges.
  */
 export async function fetchBhwSearch(
   transport: BhwFetchTransport,
@@ -89,26 +98,21 @@ export async function fetchBhwSearch(
     throw new TypeError("Search page must be a positive integer");
   }
 
-  const url = new URL("/search/", origin);
-  url.searchParams.set("q", query);
-  url.searchParams.set("o", options.order ?? "date");
-
-  let response = await transport.fetch(url, {
+  const formResponse = await transport.fetch(new URL("/search/search", origin), {
     headers: { accept: "text/html" },
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  let html = await response.text();
+  const formHtml = await formResponse.text();
 
-  if (hasCloudflareChallenge(response.status, html)) {
-    throw new BhwSearchError(
-      "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
-    );
-  }
-  if (!response.ok) {
-    throw new BhwSearchError(
-      `Search request failed with HTTP ${response.status}`,
-    );
-  }
+  assertSearchResponse(formResponse.status, formResponse.ok, formHtml, "Search form request");
+  const form = parseBhwSearchForm(formHtml, formResponse.url, origin);
+  form.controls.set(form.queryField, query);
+  if (form.orderField !== undefined) form.controls.set(form.orderField, options.order ?? "date");
+
+  let response = await submitBhwSearchForm(transport, form, options.signal);
+  let html = await response.text();
+  assertSearchResponse(response.status, response.ok, html, "Search request");
+  assertSearchResultSetUrl(response.url, origin);
 
   if (page > 1) {
     const resultsUrl = new URL(response.url, origin);
@@ -122,17 +126,92 @@ export async function fetchBhwSearch(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     html = await response.text();
-    if (hasCloudflareChallenge(response.status, html)) {
-      throw new BhwSearchError(
-        "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
-      );
-    }
-    if (!response.ok) {
-      throw new BhwSearchError(`Search results request failed with HTTP ${response.status}`);
-    }
+    assertSearchResponse(response.status, response.ok, html, "Search results request");
   }
 
   return { ...parseBhwSearchPage(html), resultUrl: response.url };
+}
+
+function parseBhwSearchForm(html: string, responseUrl: string, origin: URL): BhwSearchForm {
+  const $ = load(html);
+  const $form = $("form[action]").filter((_, el) => {
+    const action = $(el).attr("action") ?? "";
+    return new URL(action, responseUrl).pathname === "/search/search";
+  }).first();
+  if ($form.length === 0) throw new BhwSearchError("Could not find BHW's search form");
+
+  const action = new URL($form.attr("action") ?? "/search/search", responseUrl);
+  if (action.origin !== origin.origin) throw new BhwSearchError("BHW search form points to another origin");
+  const method = ($form.attr("method") ?? "GET").toUpperCase() === "POST" ? "POST" : "GET";
+  const controls = new URLSearchParams();
+
+  $form.find("input[name]").each((_, el) => {
+    const $input = $(el);
+    const type = ($input.attr("type") ?? "text").toLowerCase();
+    if ((type === "checkbox" || type === "radio") && $input.attr("checked") === undefined) return;
+    if (["submit", "button", "reset", "file"].includes(type)) return;
+    controls.set($input.attr("name")!, $input.attr("value") ?? "");
+  });
+  $form.find("textarea[name]").each((_, el) => {
+    const $textarea = $(el);
+    controls.set($textarea.attr("name")!, $textarea.text());
+  });
+  $form.find("select[name]").each((_, el) => {
+    const $select = $(el);
+    const $option = $select.find("option[selected]").first().length > 0
+      ? $select.find("option[selected]").first()
+      : $select.find("option").first();
+    controls.set($select.attr("name")!, $option.attr("value") ?? "");
+  });
+
+  const $query = $form.find('input[name="q"], input[name="keywords"], textarea[name="q"], textarea[name="keywords"]').first();
+  const queryField = $query.attr("name");
+  if (queryField === undefined) throw new BhwSearchError("BHW search form has no query field");
+
+  return {
+    action,
+    method,
+    controls,
+    queryField,
+    ...(controls.has("o") ? { orderField: "o" } : controls.has("order") ? { orderField: "order" } : {}),
+  };
+}
+
+async function submitBhwSearchForm(
+  transport: BhwFetchTransport,
+  form: BhwSearchForm,
+  signal: AbortSignal | undefined,
+) {
+  if (form.method === "GET") {
+    const url = new URL(form.action);
+    for (const [name, value] of form.controls) url.searchParams.set(name, value);
+    return transport.fetch(url, {
+      headers: { accept: "text/html" },
+      ...(signal === undefined ? {} : { signal }),
+    });
+  }
+  return transport.fetch(form.action, {
+    method: "POST",
+    headers: { accept: "text/html", "content-type": "application/x-www-form-urlencoded" },
+    body: form.controls,
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+function assertSearchResponse(status: number, ok: boolean, html: string, prefix: string): void {
+  if (hasCloudflareChallenge(status, html)) {
+    throw new BhwSearchError(
+      "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
+    );
+  }
+  if (!ok) throw new BhwSearchError(`${prefix} failed with HTTP ${status}`);
+}
+
+function assertSearchResultSetUrl(responseUrl: string, origin: URL): void {
+  const url = new URL(responseUrl, origin);
+  if (!/^\/search\/\d+\/$/.test(url.pathname)) {
+    throw new BhwSearchError("Search form did not redirect to a BHW results page");
+  }
 }
 
 /** Parse BHW thread search HTML without making a request. */

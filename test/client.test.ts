@@ -114,10 +114,20 @@ describe("BhwClient with mock transport", () => {
 
   test("search delegates to BHW's standard results endpoint", async () => {
     const session = mockSession((url, init) => {
-      expect(url.pathname).toBe("/search/");
-      expect(url.searchParams.get("q")).toBe("linkedin outreach");
-      expect(url.searchParams.get("o")).toBe("date");
-      expect(init?.method).toBeUndefined();
+      if (init?.method === undefined) {
+        expect(url.pathname).toBe("/search/search");
+        return {
+          status: 200,
+          body: `
+            <form action="/search/search" method="post">
+              <input type="hidden" name="_xfToken" value="1700000000,abc123">
+              <input name="keywords">
+              <select name="order"><option value="date" selected>Date</option></select>
+            </form>`,
+        };
+      }
+      expect(url.pathname).toBe("/search/search");
+      expect(init?.method).toBe("POST");
       return {
         status: 200,
         body: `

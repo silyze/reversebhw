@@ -81,6 +81,21 @@ function searchHtml(items: string[], nav = ""): string {
     </body></html>`;
 }
 
+function searchFormHtml(): string {
+  return `
+    <html><body>
+      <form action="/search/search" method="post">
+        <input type="hidden" name="_xfToken" value="${TOKEN}">
+        <input type="search" name="keywords" value="">
+        <input type="hidden" name="c[content]" value="thread">
+        <select name="order">
+          <option value="relevance">Relevance</option>
+          <option value="date" selected>Date</option>
+        </select>
+      </form>
+    </body></html>`;
+}
+
 function mockTransport(
   handler: (url: URL, init?: BhwFetchInit) => { status?: number; body: string; url?: string },
 ): { transport: BhwFetchTransport; calls: Array<{ url: URL; init?: BhwFetchInit }> } {
@@ -169,12 +184,19 @@ describe("parseBhwSearchPage", () => {
 });
 
 describe("fetchBhwSearch", () => {
-  test("uses BHW's results-page GET parameters and retains its redirected URL", async () => {
+  test("submits BHW's declared search form and retains its redirected URL", async () => {
     const { transport, calls } = mockTransport((url, init) => {
-      expect(url.pathname).toBe("/search/");
-      expect(url.searchParams.get("q")).toBe("linkedin outreach");
-      expect(url.searchParams.get("o")).toBe("date");
-      expect(init?.method).toBeUndefined();
+      if (calls.length === 1) {
+        expect(url.pathname).toBe("/search/search");
+        expect(init?.method).toBeUndefined();
+        return { body: searchFormHtml() };
+      }
+      expect(url.pathname).toBe("/search/search");
+      expect(init?.method).toBe("POST");
+      expect(init?.body?.toString()).toContain("keywords=linkedin+outreach");
+      expect(init?.body?.toString()).toContain("c%5Bcontent%5D=thread");
+      expect(init?.body?.toString()).toContain("order=date");
+      expect(init?.body?.toString()).toContain(`_xfToken=${encodeURIComponent(TOKEN)}`);
       return {
         body: searchHtml([searchItemHtml()]),
         url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
@@ -183,9 +205,9 @@ describe("fetchBhwSearch", () => {
     const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach");
 
     expect(page.items).toHaveLength(1);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url.pathname).toBe("/search/");
-    expect(calls[0]!.init?.headers?.accept).toBe("text/html");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url.pathname).toBe("/search/search");
+    expect(calls[1]!.init?.headers?.accept).toBe("text/html");
     expect(page.resultUrl).toBe("https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date");
   });
 
@@ -210,7 +232,10 @@ describe("fetchBhwSearch", () => {
 
   test("uses a requested positive results page", async () => {
     const { transport, calls } = mockTransport((url) => {
-      if (url.pathname === "/search/") {
+      if (calls.length === 1) {
+        return { body: searchFormHtml() };
+      }
+      if (calls.length === 2) {
         return {
           body: searchHtml([searchItemHtml()]),
           url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
@@ -219,7 +244,7 @@ describe("fetchBhwSearch", () => {
       return { body: searchHtml([searchItemHtml()]) };
     });
     await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", { page: 2 });
-    expect(calls[1]!.url.pathname).toBe("/search/43610234/page-2");
+    expect(calls[2]!.url.pathname).toBe("/search/43610234/page-2");
   });
 
   test("parses BHW's alternate search-result rows", () => {
