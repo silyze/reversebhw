@@ -114,6 +114,23 @@ export async function fetchBhwSearch(
   assertSearchResponse(response.status, response.ok, html, "Search request");
   assertSearchResultSetUrl(response.url, origin);
 
+  // BHW can redirect a valid form submission to a result set with its
+  // account-level default (usually `o=relevance`), ignoring the submitted
+  // order control. Apply the requested order to that result-set URL directly;
+  // this is the same read-only URL BHW's own sort controls generate.
+  const requestedOrder = options.order ?? "date";
+  const orderedResultsUrl = new URL(response.url, origin);
+  if (orderedResultsUrl.searchParams.get("o") !== requestedOrder) {
+    orderedResultsUrl.searchParams.set("q", query);
+    orderedResultsUrl.searchParams.set("o", requestedOrder);
+    response = await transport.fetch(orderedResultsUrl, {
+      headers: { accept: "text/html" },
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    html = await response.text();
+    assertSearchResponse(response.status, response.ok, html, "Ordered search results request");
+  }
+
   if (page > 1) {
     const resultsUrl = new URL(response.url, origin);
     const resultSetMatch = resultsUrl.pathname.match(/^\/search\/(\d+)\/$/);

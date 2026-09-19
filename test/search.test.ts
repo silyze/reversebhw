@@ -249,6 +249,30 @@ describe("fetchBhwSearch", () => {
     expect(page.resultUrl).toBe("https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date");
   });
 
+  test("follows the result set with the requested order when BHW redirects to relevance", async () => {
+    const { transport, calls } = mockTransport((url) => {
+      if (calls.length === 1) return { body: searchFormHtml() };
+      if (calls.length === 2) {
+        return {
+          body: searchHtml([searchItemHtml()]),
+          url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=relevance",
+        };
+      }
+      expect(url.pathname).toBe("/search/43610234/");
+      expect(url.searchParams.get("q")).toBe("linkedin outreach");
+      expect(url.searchParams.get("o")).toBe("date");
+      return {
+        body: searchHtml([searchItemHtml()]),
+        url: url.href,
+      };
+    });
+
+    const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach");
+
+    expect(calls).toHaveLength(3);
+    expect(page.resultUrl).toBe("https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date");
+  });
+
   test("rejects a Cloudflare challenge without attempting a solver", async () => {
     const { transport } = mockTransport(() => ({
       status: 403,
