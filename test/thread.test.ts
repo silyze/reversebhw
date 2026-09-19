@@ -325,7 +325,9 @@ describe("replyToBhwThread", () => {
     expect(result).toEqual({
       postId: 98765,
       redirect: "/seo/test-thread.999/post-98765",
+      httpStatus: 200,
       responseStatus: "ok",
+      responseFields: ["redirect", "status"],
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url.pathname).toBe("/seo/test-thread.999/add-reply");

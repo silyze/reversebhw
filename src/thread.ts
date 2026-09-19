@@ -95,8 +95,12 @@ export interface BhwReplyInput {
 export interface BhwReplyResult {
   readonly postId: number;
   readonly redirect: string;
+  /** HTTP response status returned by BHW. */
+  readonly httpStatus: number;
   /** BHW's JSON response status, when supplied. */
   readonly responseStatus?: string;
+  /** Names of fields present in BHW's JSON response; values are never exposed. */
+  readonly responseFields: readonly string[];
 }
 
 export interface BhwDraftInput {
@@ -336,7 +340,9 @@ export async function replyToBhwThread(
   return {
     postId,
     redirect,
+    httpStatus: response.status,
     ...(responseStatus === undefined ? {} : { responseStatus }),
+    responseFields: Object.keys(json).sort(),
   };
 }
 
