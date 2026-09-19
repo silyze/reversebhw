@@ -72,6 +72,26 @@ function searchItemHtml(overrides: Partial<{
     </div>`;
 }
 
+function contentRowSearchItemHtml(): string {
+  return `
+    <li class="block-row block-row--separated js-inlineModContainer" data-author="AccHexa">
+      <div class="contentRow">
+        <div class="contentRow-main">
+          <h3 class="contentRow-title">
+            <a href="/seo/social-account-syndicate.1774294/post-21239248">Social <em class="textHighlight">LinkedIn</em> account service</a>
+          </h3>
+          <div class="contentRow-snippet">Accounts for marketing, <em class="textHighlight">outreach</em>, and business growth.</div>
+          <div class="contentRow-minor contentRow-minor--hideLinks">
+            <a href="/members/acchexa.1755454/">AccHexa</a>
+            <span>Post #124</span>
+            <time datetime="2026-09-18T11:45:51+0200" data-timestamp="1789724751">Yesterday</time>
+            <span>Forum: <a href="/forums/account-selling-renting-services.310/">Account Selling / Renting Services</a></span>
+          </div>
+        </div>
+      </div>
+    </li>`;
+}
+
 function searchHtml(items: string[], nav = ""): string {
   return `
     <html><body>
@@ -181,6 +201,24 @@ describe("parseBhwSearchPage", () => {
       lastPageUrl: "/search/123/page-3",
     });
   });
+
+  test("parses BHW's current content-row post search results", () => {
+    const page = parseBhwSearchPage(searchHtml([contentRowSearchItemHtml()]));
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      threadId: 1774294,
+      slug: "social-account-syndicate",
+      url: "/seo/social-account-syndicate.1774294/post-21239248",
+      title: "Social LinkedIn account service",
+      forumName: "Account Selling / Renting Services",
+      forumUrl: "/forums/account-selling-renting-services.310/",
+      author: "AccHexa",
+      authorId: 1755454,
+      excerpt: "Accounts for marketing, outreach, and business growth.",
+      lastPostAt: 1789724751,
+    });
+  });
 });
 
 describe("fetchBhwSearch", () => {
@@ -261,6 +299,24 @@ describe("fetchBhwSearch", () => {
     expect(page.items[0]).toMatchObject({
       threadId: 1848402,
       slug: "linkedin-outreach",
+      title: "LinkedIn Outreach",
+    });
+  });
+
+  test("falls back to unique thread links when the search theme has no result-row classes", () => {
+    const page = parseBhwSearchPage(`
+      <html><body>
+        <input type="hidden" name="_xfToken" value="${TOKEN}">
+        <main>
+          <a href="/linkedin/linkedin-outreach.1848402/">LinkedIn Outreach</a>
+          <a href="/linkedin/linkedin-outreach.1848402/">Read more</a>
+          <a href="/members/example.123/">Example member</a>
+        </main>
+      </body></html>`);
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      threadId: 1848402,
       title: "LinkedIn Outreach",
     });
   });

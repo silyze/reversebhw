@@ -173,7 +173,13 @@ function parseBhwSearchForm(html: string, responseUrl: string, origin: URL): Bhw
     method,
     controls,
     queryField,
-    ...(controls.has("o") ? { orderField: "o" } : controls.has("order") ? { orderField: "order" } : {}),
+    ...(controls.has("o")
+      ? { orderField: "o" }
+      : controls.has("order")
+        ? { orderField: "order" }
+        : controls.has("c[order]")
+          ? { orderField: "c[order]" }
+          : {}),
   };
 }
 
@@ -221,7 +227,7 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
   const items: BhwSearchItem[] = [];
 
   $(
-    ".structItem.structItem--thread, .structItem[class*='js-threadListItem-'], .structItem[data-content^='thread-'], .searchResult, .search-result, [data-thread-id]",
+    ".structItem.structItem--thread, .structItem[class*='js-threadListItem-'], .structItem[data-content^='thread-'], .searchResult, .search-result, [data-thread-id], .block-row",
   ).each((_, el) => {
     const $el = $(el);
     const titleLink = findThreadTitleLink($, $el);
@@ -239,7 +245,9 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
     if (!Number.isFinite(threadId) || threadId <= 0) return;
 
     const authorLink = $el
-      .find('.structItem-minor a[href*="/members/"], .structItem-cell--icon a[href*="/members/"]')
+      .find(
+        '.structItem-minor a[href*="/members/"], .structItem-cell--icon a[href*="/members/"], .contentRow-minor a[href*="/members/"]',
+      )
       .first();
     const forumLink = findForumLink($, $el);
     const latestLink = $el
@@ -247,14 +255,16 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
         '.structItem-cell--latest a[href*="/members/"], .structItem-latestDate a[href*="/members/"]',
       )
       .first();
-    const startTime = $el.find(".structItem-startDate time").first();
+    const startTime = $el
+      .find(".structItem-startDate time, .contentRow-minor time")
+      .first();
     const latestTime = $el
       .find(".structItem-cell--latest time, .structItem-latestDate time")
       .last();
     const fallbackLatestTime =
       latestTime.length > 0 ? latestTime : $el.find("time").last();
     const metaText = $el
-      .find(".structItem-cell--meta, .structItem-parts")
+      .find(".structItem-cell--meta, .structItem-parts, .contentRow-minor")
       .text();
 
     items.push({
@@ -267,13 +277,13 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
       author: normalizeText($el.attr("data-author") ?? authorLink.text()),
       authorId: memberId(authorLink.attr("href")),
       startedAt: parseXfDate(
-        startTime.attr("data-time"),
+        startTime.attr("data-timestamp") ?? startTime.attr("data-time"),
         startTime.attr("datetime"),
       ),
       lastPoster: normalizeText(latestLink.text()),
       lastPosterId: memberId(latestLink.attr("href")),
       lastPostAt: parseXfDate(
-        fallbackLatestTime.attr("data-time"),
+        fallbackLatestTime.attr("data-timestamp") ?? fallbackLatestTime.attr("data-time"),
         fallbackLatestTime.attr("datetime"),
       ),
       replyCount: countFromMeta(metaText, "replies"),
@@ -281,13 +291,43 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
       excerpt: normalizeText(
         $el
           .find(
-            ".structItem-snippet, .structItem-description, .searchResult-snippet",
+            ".structItem-snippet, .structItem-description, .searchResult-snippet, .contentRow-snippet",
           )
           .first()
           .text(),
       ),
     });
   });
+
+  if (items.length === 0) {
+    const seenThreadIds = new Set<number>();
+    $("a[href]").each((_, el) => {
+      const $link = $(el);
+      const href = $link.attr("href") ?? "";
+      const threadRef = parseThreadReference(href);
+      if (threadRef === undefined || !isThreadHref(href) || seenThreadIds.has(threadRef.threadId)) return;
+      const title = normalizeText($link.text());
+      if (title.length === 0) return;
+      seenThreadIds.add(threadRef.threadId);
+      items.push({
+        threadId: threadRef.threadId,
+        title,
+        slug: threadRef.slug,
+        url: href,
+        forumName: "",
+        forumUrl: "",
+        author: "",
+        authorId: 0,
+        startedAt: 0,
+        lastPoster: "",
+        lastPosterId: 0,
+        lastPostAt: 0,
+        replyCount: 0,
+        viewCount: 0,
+        excerpt: "",
+      });
+    });
+  }
 
   return {
     items,
@@ -316,7 +356,8 @@ function findThreadTitleLink(
 
 function isThreadHref(href: string): boolean {
   if (!parseThreadReference(href)) return false;
-  return !/^\/(?:members|forums|posts|search|tags|account|whats-new)(?:\/|$)/i.test(href);
+  const path = new URL(href, "https://www.blackhatworld.com").pathname;
+  return !/^\/(?:members|forums|posts|search|tags|account|whats-new)(?:\/|$)/i.test(path);
 }
 
 /* ---------------------------------------------------------------------------
@@ -343,7 +384,9 @@ function findForumLink(
   $: ReturnType<typeof load>,
   $el: ReturnType<ReturnType<typeof load>>,
 ) {
-  const explicit = $el.find('.structItem-minor a[href*="/forums/"]').first();
+  const explicit = $el
+    .find('.structItem-minor a[href*="/forums/"], .contentRow-minor a[href*="/forums/"]')
+    .first();
   if (explicit.length > 0) return explicit;
 
   // BHW's custom routes can use a non-`/forums/` forum path. The remaining
