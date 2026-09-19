@@ -46,11 +46,15 @@ export interface BhwSearchPage {
   readonly pagination: BhwPagination;
   /** The page's XF token, useful to callers sharing a client session. */
   readonly xfToken: string;
+  /** Final BHW search-result URL after its temporary result-set redirect. */
+  readonly resultUrl?: string;
 }
 
 export interface BhwSearchOptions {
   /** 1-based results page; defaults to 1. */
   readonly page?: number;
+  /** BHW's supported result ordering; defaults to newest first. */
+  readonly order?: BhwSearchOrder;
   readonly signal?: AbortSignal;
 }
 
@@ -64,19 +68,17 @@ export class BhwSearchError extends Error {
  * ------------------------------------------------------------------------- */
 
 /**
- * Search BHW through its standard search form.
+ * Search BHW through its standard results-page GET route.
  *
- * BHW creates a temporary search-result set when its normal search form is
- * submitted, then redirects to `/search/{resultSetId}/?q=...&o=date`. The
- * request is read-only and intentionally does not try to solve Cloudflare
- * challenges.
+ * BHW creates a temporary search-result set and redirects to
+ * `/search/{resultSetId}/?q=...&o=date`. The request is read-only and
+ * intentionally does not try to solve Cloudflare challenges.
  */
 export async function fetchBhwSearch(
   transport: BhwFetchTransport,
   origin: URL,
   keywords: string,
   options: BhwSearchOptions = {},
-  xfToken?: string,
 ): Promise<BhwSearchPage> {
   const query = keywords.trim();
   if (query.length === 0) {
@@ -87,20 +89,12 @@ export async function fetchBhwSearch(
     throw new TypeError("Search page must be a positive integer");
   }
 
-  const token = xfToken ?? await fetchSearchToken(transport, origin, options.signal);
-  const body = new URLSearchParams();
-  body.set("keywords", query);
-  body.set("c[content]", "thread");
-  body.set("order", "date");
-  body.set("_xfToken", token);
+  const url = new URL("/search/", origin);
+  url.searchParams.set("q", query);
+  url.searchParams.set("o", options.order ?? "date");
 
-  let response = await transport.fetch(new URL("/search/search", origin), {
-    method: "POST",
-    headers: {
-      accept: "text/html",
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body,
+  let response = await transport.fetch(url, {
+    headers: { accept: "text/html" },
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   let html = await response.text();
@@ -138,28 +132,7 @@ export async function fetchBhwSearch(
     }
   }
 
-  return parseBhwSearchPage(html);
-}
-
-async function fetchSearchToken(
-  transport: BhwFetchTransport,
-  origin: URL,
-  signal: AbortSignal | undefined,
-): Promise<string> {
-  const response = await transport.fetch(new URL("/", origin), {
-    headers: { accept: "text/html" },
-    ...(signal === undefined ? {} : { signal }),
-  });
-  const html = await response.text();
-  if (hasCloudflareChallenge(response.status, html)) {
-    throw new BhwSearchError(
-      "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
-    );
-  }
-  if (!response.ok) {
-    throw new BhwSearchError(`Search token request failed with HTTP ${response.status}`);
-  }
-  return extractXfToken(html);
+  return { ...parseBhwSearchPage(html), resultUrl: response.url };
 }
 
 /** Parse BHW thread search HTML without making a request. */

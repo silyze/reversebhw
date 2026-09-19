@@ -112,16 +112,12 @@ describe("BhwClient with mock transport", () => {
     expect(await client.confirmEmail("https://www.blackhatworld.com/account-confirmation/u.1/email?c=x")).toBe(false);
   });
 
-  test("search submits the BHW form after obtaining a token", async () => {
+  test("search delegates to BHW's standard results endpoint", async () => {
     const session = mockSession((url, init) => {
-      if (url.pathname === "/") {
-        return {
-          status: 200,
-          body: `<input type="hidden" name="_xfToken" value="1700000000,abc123">`,
-        };
-      }
-      expect(url.pathname).toBe("/search/search");
-      expect(init?.method).toBe("POST");
+      expect(url.pathname).toBe("/search/");
+      expect(url.searchParams.get("q")).toBe("linkedin outreach");
+      expect(url.searchParams.get("o")).toBe("date");
+      expect(init?.method).toBeUndefined();
       return {
         status: 200,
         body: `

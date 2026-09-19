@@ -169,26 +169,24 @@ describe("parseBhwSearchPage", () => {
 });
 
 describe("fetchBhwSearch", () => {
-  test("submits BHW's normal search form and parses the redirected results page", async () => {
+  test("uses BHW's results-page GET parameters and retains its redirected URL", async () => {
     const { transport, calls } = mockTransport((url, init) => {
-      expect(url.pathname).toBe("/search/search");
-      expect(init?.method).toBe("POST");
-      expect(init?.headers?.["content-type"]).toBe("application/x-www-form-urlencoded");
-      expect(init?.body?.toString()).toContain("keywords=linkedin+outreach");
-      expect(init?.body?.toString()).toContain("c%5Bcontent%5D=thread");
-      expect(init?.body?.toString()).toContain("order=date");
-      expect(init?.body?.toString()).toContain(`_xfToken=${encodeURIComponent(TOKEN)}`);
+      expect(url.pathname).toBe("/search/");
+      expect(url.searchParams.get("q")).toBe("linkedin outreach");
+      expect(url.searchParams.get("o")).toBe("date");
+      expect(init?.method).toBeUndefined();
       return {
         body: searchHtml([searchItemHtml()]),
         url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
       };
     });
-    const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", {}, TOKEN);
+    const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach");
 
     expect(page.items).toHaveLength(1);
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url.pathname).toBe("/search/search");
+    expect(calls[0]!.url.pathname).toBe("/search/");
     expect(calls[0]!.init?.headers?.accept).toBe("text/html");
+    expect(page.resultUrl).toBe("https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date");
   });
 
   test("rejects a Cloudflare challenge without attempting a solver", async () => {
@@ -212,7 +210,7 @@ describe("fetchBhwSearch", () => {
 
   test("uses a requested positive results page", async () => {
     const { transport, calls } = mockTransport((url) => {
-      if (url.pathname === "/search/search") {
+      if (url.pathname === "/search/") {
         return {
           body: searchHtml([searchItemHtml()]),
           url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
@@ -220,7 +218,7 @@ describe("fetchBhwSearch", () => {
       }
       return { body: searchHtml([searchItemHtml()]) };
     });
-    await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", { page: 2 }, TOKEN);
+    await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", { page: 2 });
     expect(calls[1]!.url.pathname).toBe("/search/43610234/page-2");
   });
 
