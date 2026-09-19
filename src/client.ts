@@ -380,11 +380,13 @@ export class BhwClient {
     keywords: string,
     options: BhwSearchOptions = {},
   ): Promise<BhwSearchPage> {
+    const token = await this.ensureToken(options.signal);
     const page = await fetchBhwSearch(
       this.#transport,
       this.origin,
       keywords,
       options,
+      token,
     );
     this.#xfToken = page.xfToken;
     return page;

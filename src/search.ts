@@ -12,7 +12,7 @@ import type { BhwFetchTransport } from "./session.js";
  * Types
  * ------------------------------------------------------------------------- */
 
-/** Sort order supported by XenForo's standard search form. */
+/** Search-order values emitted by BHW result-set URLs. */
 export type BhwSearchOrder = "relevance" | "date";
 
 /** One thread row returned by BHW's standard XenForo search results. */
@@ -51,10 +51,6 @@ export interface BhwSearchPage {
 export interface BhwSearchOptions {
   /** 1-based results page; defaults to 1. */
   readonly page?: number;
-  /** Limit matches to thread titles instead of title and first-post content. */
-  readonly titleOnly?: boolean;
-  /** Result ordering; defaults to newest first for opportunity discovery. */
-  readonly order?: BhwSearchOrder;
   readonly signal?: AbortSignal;
 }
 
@@ -68,18 +64,19 @@ export class BhwSearchError extends Error {
  * ------------------------------------------------------------------------- */
 
 /**
- * Search BHW through its public results-page GET endpoint.
+ * Search BHW through its standard search form.
  *
- * This does not require a CSRF token or a logged-in session. When cookies are
- * present on the supplied transport, XenForo simply applies that session's
- * normal visibility permissions. The request is read-only and intentionally
- * does not try to solve Cloudflare challenges.
+ * BHW creates a temporary search-result set when its normal search form is
+ * submitted, then redirects to `/search/{resultSetId}/?q=...&o=date`. The
+ * request is read-only and intentionally does not try to solve Cloudflare
+ * challenges.
  */
 export async function fetchBhwSearch(
   transport: BhwFetchTransport,
   origin: URL,
   keywords: string,
   options: BhwSearchOptions = {},
+  xfToken?: string,
 ): Promise<BhwSearchPage> {
   const query = keywords.trim();
   if (query.length === 0) {
@@ -90,24 +87,23 @@ export async function fetchBhwSearch(
     throw new TypeError("Search page must be a positive integer");
   }
 
-  // BHW's ordinary search UI displays results at `/search/?q=...`.
-  // `/search/search` is the advanced-search form action and can return an
-  // empty form page when requested with GET, even though matching threads
-  // exist. Use the same read-only results route as the normal UI.
-  const url = new URL("/search/", origin);
-  url.searchParams.set("q", query);
-  url.searchParams.set("order", options.order ?? "date");
-  if (page > 1) url.searchParams.set("page", String(page));
-  if (options.titleOnly === true) {
-    // BHW currently treats this as an optional hint on its results route.
-    url.searchParams.set("c[title_only]", "1");
-  }
+  const token = xfToken ?? await fetchSearchToken(transport, origin, options.signal);
+  const body = new URLSearchParams();
+  body.set("keywords", query);
+  body.set("c[content]", "thread");
+  body.set("order", "date");
+  body.set("_xfToken", token);
 
-  const response = await transport.fetch(url, {
-    headers: { accept: "text/html" },
+  let response = await transport.fetch(new URL("/search/search", origin), {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  const html = await response.text();
+  let html = await response.text();
 
   if (hasCloudflareChallenge(response.status, html)) {
     throw new BhwSearchError(
@@ -120,7 +116,50 @@ export async function fetchBhwSearch(
     );
   }
 
+  if (page > 1) {
+    const resultsUrl = new URL(response.url, origin);
+    const resultSetMatch = resultsUrl.pathname.match(/^\/search\/(\d+)\/$/);
+    if (resultSetMatch === null) {
+      throw new BhwSearchError("Search form did not redirect to a BHW results page");
+    }
+    resultsUrl.pathname = `/search/${resultSetMatch[1]}/page-${page}`;
+    response = await transport.fetch(resultsUrl, {
+      headers: { accept: "text/html" },
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    html = await response.text();
+    if (hasCloudflareChallenge(response.status, html)) {
+      throw new BhwSearchError(
+        "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
+      );
+    }
+    if (!response.ok) {
+      throw new BhwSearchError(`Search results request failed with HTTP ${response.status}`);
+    }
+  }
+
   return parseBhwSearchPage(html);
+}
+
+async function fetchSearchToken(
+  transport: BhwFetchTransport,
+  origin: URL,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  const response = await transport.fetch(new URL("/", origin), {
+    headers: { accept: "text/html" },
+    ...(signal === undefined ? {} : { signal }),
+  });
+  const html = await response.text();
+  if (hasCloudflareChallenge(response.status, html)) {
+    throw new BhwSearchError(
+      "Search returned a Cloudflare challenge — manual account attention is required; do not retry automatically",
+    );
+  }
+  if (!response.ok) {
+    throw new BhwSearchError(`Search token request failed with HTTP ${response.status}`);
+  }
+  return extractXfToken(html);
 }
 
 /** Parse BHW thread search HTML without making a request. */
@@ -130,10 +169,10 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
   const items: BhwSearchItem[] = [];
 
   $(
-    ".structItem.structItem--thread, .structItem[class*='js-threadListItem-'], .structItem[data-content^='thread-']",
+    ".structItem.structItem--thread, .structItem[class*='js-threadListItem-'], .structItem[data-content^='thread-'], .searchResult, .search-result, [data-thread-id]",
   ).each((_, el) => {
     const $el = $(el);
-    const titleLink = $el.find(".structItem-title a").last();
+    const titleLink = findThreadTitleLink($, $el);
     const href = titleLink.attr("href") ?? "";
     const threadRef = parseThreadReference(href);
     const classId = ($el.attr("class") ?? "").match(
@@ -203,6 +242,29 @@ export function parseBhwSearchPage(html: string): BhwSearchPage {
     pagination: parseXfPagination($),
     xfToken,
   };
+}
+
+function findThreadTitleLink(
+  $: ReturnType<typeof load>,
+  $el: ReturnType<ReturnType<typeof load>>,
+) {
+  const conventional = $el.find(
+    ".structItem-title a, .searchResult-title a, .contentRow-title a, .title a, h1 a, h2 a, h3 a",
+  ).first();
+  if (conventional.length > 0) return conventional;
+
+  const preferred = $el.find("a[href]").filter((_, el) => {
+    const href = $(el).attr("href") ?? "";
+    return isThreadHref(href);
+  }).first();
+  if (preferred.length > 0) return preferred;
+
+  return $el.find("a").first();
+}
+
+function isThreadHref(href: string): boolean {
+  if (!parseThreadReference(href)) return false;
+  return !/^\/(?:members|forums|posts|search|tags|account|whats-new)(?:\/|$)/i.test(href);
 }
 
 /* ---------------------------------------------------------------------------

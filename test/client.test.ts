@@ -7,7 +7,7 @@ const ORIGIN = "https://www.blackhatworld.com/";
 
 /** Minimal mock session that records calls and returns scripted responses. */
 function mockSession(
-  handler: (url: URL, init?: BhwFetchInit) => { status: number; body: string },
+  handler: (url: URL, init?: BhwFetchInit) => { status: number; body: string; url?: string },
 ): BhwSession {
   const calls: Array<{ url: string; init?: BhwFetchInit }> = [];
   return {
@@ -19,7 +19,7 @@ function mockSession(
       return {
         status: result.status,
         ok: result.status >= 200 && result.status < 300,
-        url: resolved.href,
+        url: result.url ?? resolved.href,
         async text() {
           return result.body;
         },
@@ -112,10 +112,16 @@ describe("BhwClient with mock transport", () => {
     expect(await client.confirmEmail("https://www.blackhatworld.com/account-confirmation/u.1/email?c=x")).toBe(false);
   });
 
-  test("search delegates to BHW's standard results endpoint", async () => {
-    const session = mockSession((url) => {
-      expect(url.pathname).toBe("/search/");
-      expect(url.searchParams.get("q")).toBe("linkedin outreach");
+  test("search submits the BHW form after obtaining a token", async () => {
+    const session = mockSession((url, init) => {
+      if (url.pathname === "/") {
+        return {
+          status: 200,
+          body: `<input type="hidden" name="_xfToken" value="1700000000,abc123">`,
+        };
+      }
+      expect(url.pathname).toBe("/search/search");
+      expect(init?.method).toBe("POST");
       return {
         status: 200,
         body: `
@@ -123,6 +129,7 @@ describe("BhwClient with mock transport", () => {
           <div class="structItem structItem--thread js-threadListItem-99">
             <div class="structItem-title"><a href="/seo/linkedin-outreach.99/">LinkedIn outreach</a></div>
           </div>`,
+        url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
       };
     });
     const client = new BhwClient({ session });

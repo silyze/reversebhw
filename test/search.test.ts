@@ -82,7 +82,7 @@ function searchHtml(items: string[], nav = ""): string {
 }
 
 function mockTransport(
-  handler: (url: URL, init?: BhwFetchInit) => { status?: number; body: string },
+  handler: (url: URL, init?: BhwFetchInit) => { status?: number; body: string; url?: string },
 ): { transport: BhwFetchTransport; calls: Array<{ url: URL; init?: BhwFetchInit }> } {
   const calls: Array<{ url: URL; init?: BhwFetchInit }> = [];
   return {
@@ -96,7 +96,7 @@ function mockTransport(
         return {
           status,
           ok: status >= 200 && status < 300,
-          url: resolved.href,
+          url: result.url ?? resolved.href,
           text: async () => result.body,
           json: async () => JSON.parse(result.body),
         };
@@ -169,26 +169,25 @@ describe("parseBhwSearchPage", () => {
 });
 
 describe("fetchBhwSearch", () => {
-  test("uses BHW's read-only results-page GET parameters", async () => {
-    const { transport, calls } = mockTransport(() => ({
-      body: searchHtml([searchItemHtml()]),
-    }));
-    const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", {
-      titleOnly: true,
-      order: "relevance",
+  test("submits BHW's normal search form and parses the redirected results page", async () => {
+    const { transport, calls } = mockTransport((url, init) => {
+      expect(url.pathname).toBe("/search/search");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers?.["content-type"]).toBe("application/x-www-form-urlencoded");
+      expect(init?.body?.toString()).toContain("keywords=linkedin+outreach");
+      expect(init?.body?.toString()).toContain("c%5Bcontent%5D=thread");
+      expect(init?.body?.toString()).toContain("order=date");
+      expect(init?.body?.toString()).toContain(`_xfToken=${encodeURIComponent(TOKEN)}`);
+      return {
+        body: searchHtml([searchItemHtml()]),
+        url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
+      };
     });
+    const page = await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", {}, TOKEN);
 
     expect(page.items).toHaveLength(1);
     expect(calls).toHaveLength(1);
-    const url = calls[0]!.url;
-    expect(url.pathname).toBe("/search/");
-    expect(url.searchParams.get("q")).toBe("linkedin outreach");
-    expect(url.searchParams.get("keywords")).toBeNull();
-    expect(url.searchParams.get("search_type")).toBeNull();
-    expect(url.searchParams.get("c[content]")).toBeNull();
-    expect(url.searchParams.get("c[title_only]")).toBe("1");
-    expect(url.searchParams.get("order")).toBe("relevance");
-    expect(calls[0]!.init?.method).toBeUndefined();
+    expect(calls[0]!.url.pathname).toBe("/search/search");
     expect(calls[0]!.init?.headers?.accept).toBe("text/html");
   });
 
@@ -212,9 +211,35 @@ describe("fetchBhwSearch", () => {
   });
 
   test("uses a requested positive results page", async () => {
-    const { transport, calls } = mockTransport(() => ({ body: searchHtml([searchItemHtml()]) }));
-    await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", { page: 2 });
-    expect(calls[0]!.url.searchParams.get("page")).toBe("2");
+    const { transport, calls } = mockTransport((url) => {
+      if (url.pathname === "/search/search") {
+        return {
+          body: searchHtml([searchItemHtml()]),
+          url: "https://www.blackhatworld.com/search/43610234/?q=linkedin+outreach&o=date",
+        };
+      }
+      return { body: searchHtml([searchItemHtml()]) };
+    });
+    await fetchBhwSearch(transport, ORIGIN, "linkedin outreach", { page: 2 }, TOKEN);
+    expect(calls[1]!.url.pathname).toBe("/search/43610234/page-2");
+  });
+
+  test("parses BHW's alternate search-result rows", () => {
+    const page = parseBhwSearchPage(`
+      <html><body>
+        <input type="hidden" name="_xfToken" value="${TOKEN}">
+        <div class="searchResult">
+          <h3 class="title"><a href="/linkedin/linkedin-outreach.1848402/">LinkedIn Outreach</a></h3>
+          <div class="meta"><a href="/linkedin/">Linkedin</a></div>
+        </div>
+      </body></html>`);
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      threadId: 1848402,
+      slug: "linkedin-outreach",
+      title: "LinkedIn Outreach",
+    });
   });
 
   test("rejects invalid result pages before making a request", async () => {
