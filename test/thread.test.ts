@@ -301,7 +301,11 @@ describe("replyToBhwThread", () => {
           ok: true,
           url: resolved.href,
           text: async () => "",
-          json: async () => ({ status: "ok", redirect: "/seo/test-thread.999/post-98765" }),
+          json: async () => ({
+            status: "ok",
+            message: "<strong>Reply received.</strong>",
+            redirect: "/seo/test-thread.999/post-98765",
+          }),
         };
       },
     };
@@ -327,7 +331,8 @@ describe("replyToBhwThread", () => {
       redirect: "/seo/test-thread.999/post-98765",
       httpStatus: 200,
       responseStatus: "ok",
-      responseFields: ["redirect", "status"],
+      responseMessage: "Reply received.",
+      responseFields: ["message", "redirect", "status"],
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url.pathname).toBe("/seo/test-thread.999/add-reply");

@@ -99,6 +99,8 @@ export interface BhwReplyResult {
   readonly httpStatus: number;
   /** BHW's JSON response status, when supplied. */
   readonly responseStatus?: string;
+  /** Sanitized BHW system message, when supplied. */
+  readonly responseMessage?: string;
   /** Names of fields present in BHW's JSON response; values are never exposed. */
   readonly responseFields: readonly string[];
 }
@@ -336,12 +338,14 @@ export async function replyToBhwThread(
 
   const postId = extractPostIdFromResponse(json);
   const responseStatus = typeof json.status === "string" ? json.status : undefined;
+  const responseMessage = responseMessageFromJson(json.message);
 
   return {
     postId,
     redirect,
     httpStatus: response.status,
     ...(responseStatus === undefined ? {} : { responseStatus }),
+    ...(responseMessage === undefined ? {} : { responseMessage }),
     responseFields: Object.keys(json).sort(),
   };
 }
@@ -429,6 +433,15 @@ function extractPostIdFromResponse(
 
   if (typeof json.post === "number") return json.post;
   return 0;
+}
+
+function responseMessageFromJson(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const message = value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return message.length === 0 ? undefined : message.slice(0, 500);
 }
 
 function parseIntAttr(
