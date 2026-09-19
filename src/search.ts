@@ -68,7 +68,7 @@ export class BhwSearchError extends Error {
  * ------------------------------------------------------------------------- */
 
 /**
- * Search BHW threads through XenForo's public standard GET endpoint.
+ * Search BHW through its public results-page GET endpoint.
  *
  * This does not require a CSRF token or a logged-in session. When cookies are
  * present on the supplied transport, XenForo simply applies that session's
@@ -90,15 +90,16 @@ export async function fetchBhwSearch(
     throw new TypeError("Search page must be a positive integer");
   }
 
-  // `search_type=post` + `c[content]=thread` is XenForo's documented
-  // combination for thread results (rather than one result per matching post).
-  const url = new URL("/search/search", origin);
-  url.searchParams.set("keywords", query);
-  url.searchParams.set("search_type", "post");
-  url.searchParams.set("c[content]", "thread");
+  // BHW's ordinary search UI displays results at `/search/?q=...`.
+  // `/search/search` is the advanced-search form action and can return an
+  // empty form page when requested with GET, even though matching threads
+  // exist. Use the same read-only results route as the normal UI.
+  const url = new URL("/search/", origin);
+  url.searchParams.set("q", query);
   url.searchParams.set("order", options.order ?? "date");
   if (page > 1) url.searchParams.set("page", String(page));
   if (options.titleOnly === true) {
+    // BHW currently treats this as an optional hint on its results route.
     url.searchParams.set("c[title_only]", "1");
   }
 

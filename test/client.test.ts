@@ -112,12 +112,10 @@ describe("BhwClient with mock transport", () => {
     expect(await client.confirmEmail("https://www.blackhatworld.com/account-confirmation/u.1/email?c=x")).toBe(false);
   });
 
-  test("search delegates to the standard thread-search endpoint", async () => {
+  test("search delegates to BHW's standard results endpoint", async () => {
     const session = mockSession((url) => {
-      expect(url.pathname).toBe("/search/search");
-      expect(url.searchParams.get("keywords")).toBe("linkedin outreach");
-      expect(url.searchParams.get("search_type")).toBe("post");
-      expect(url.searchParams.get("c[content]")).toBe("thread");
+      expect(url.pathname).toBe("/search/");
+      expect(url.searchParams.get("q")).toBe("linkedin outreach");
       return {
         status: 200,
         body: `

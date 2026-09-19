@@ -169,7 +169,7 @@ describe("parseBhwSearchPage", () => {
 });
 
 describe("fetchBhwSearch", () => {
-  test("uses XenForo's read-only thread-search GET parameters", async () => {
+  test("uses BHW's read-only results-page GET parameters", async () => {
     const { transport, calls } = mockTransport(() => ({
       body: searchHtml([searchItemHtml()]),
     }));
@@ -181,10 +181,11 @@ describe("fetchBhwSearch", () => {
     expect(page.items).toHaveLength(1);
     expect(calls).toHaveLength(1);
     const url = calls[0]!.url;
-    expect(url.pathname).toBe("/search/search");
-    expect(url.searchParams.get("keywords")).toBe("linkedin outreach");
-    expect(url.searchParams.get("search_type")).toBe("post");
-    expect(url.searchParams.get("c[content]")).toBe("thread");
+    expect(url.pathname).toBe("/search/");
+    expect(url.searchParams.get("q")).toBe("linkedin outreach");
+    expect(url.searchParams.get("keywords")).toBeNull();
+    expect(url.searchParams.get("search_type")).toBeNull();
+    expect(url.searchParams.get("c[content]")).toBeNull();
     expect(url.searchParams.get("c[title_only]")).toBe("1");
     expect(url.searchParams.get("order")).toBe("relevance");
     expect(calls[0]!.init?.method).toBeUndefined();
