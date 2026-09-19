@@ -48,6 +48,8 @@ export interface BhwThreadPage {
   readonly xfToken: string;
   /** Form attachment hash from the quick-reply form. */
   readonly attachmentHash: string;
+  /** Exact quick-reply action emitted by BHW's live form. */
+  readonly replyAction: string;
   /** True only when the live page exposes an enabled quick-reply form. */
   readonly canReply: boolean;
 }
@@ -68,6 +70,8 @@ export interface BhwReplyInput {
   readonly slug: string;
   /** Rich-text editor HTML (XF2 `message_html` format). */
   readonly messageHtml: string;
+  /** Exact quick-reply action obtained from a live `BhwThreadPage`. */
+  readonly replyAction?: string;
   /** Post ID being replied to (for threaded quote replies). */
   readonly parentId?: number;
   readonly attachmentHash?: string;
@@ -229,6 +233,7 @@ export function parseBhwThreadPage(
     pagination,
     xfToken,
     attachmentHash,
+    replyAction: quickReplyForm.attr("action") ?? "",
     canReply,
   };
 }
@@ -250,7 +255,9 @@ export async function replyToBhwThread(
   input: BhwReplyInput,
 ): Promise<BhwReplyResult> {
   const threadPath = `/threads/${input.slug}.${input.threadId}/`;
-  const referer = new URL(threadPath, origin).href;
+  const target = replyTarget(input.replyAction, threadPath, origin);
+  const requestUri = target.pathname.replace(/\/add-reply$/, "/") || threadPath;
+  const referer = new URL(requestUri, origin).href;
   const attachmentHash = input.attachmentHash ?? "";
   const lastDate = input.lastDate ?? 0;
 
@@ -274,9 +281,9 @@ export async function replyToBhwThread(
   body.set("load_extra", "1");
   body.set("_xfResponseType", "json");
   body.set("_xfWithData", "1");
-  body.set("_xfRequestUri", threadPath);
+  body.set("_xfRequestUri", requestUri);
 
-  const response = await transport.fetch(new URL(`${threadPath}add-reply`, origin), {
+  const response = await transport.fetch(target, {
     method: "POST",
     headers: {
       ...XF_FORM_HEADERS,
@@ -287,18 +294,26 @@ export async function replyToBhwThread(
   });
 
   const json = parseXfJson(await response.json());
-  if (xfHasError(json)) {
+  if (!response.ok || xfHasError(json)) {
     throw new BhwThreadError(`Reply rejected: ${xfErrorMessage(json)}`);
   }
 
-  const redirect =
-    typeof json.redirect === "string"
-      ? json.redirect
-      : new URL(threadPath, origin).href;
+  if (typeof json.redirect !== "string" || json.redirect.length === 0) {
+    throw new BhwThreadError("Reply response did not include BHW's post redirect; no post will be treated as published.");
+  }
+  const redirect = json.redirect;
 
   const postId = extractPostIdFromResponse(json);
 
   return { postId, redirect };
+}
+
+function replyTarget(replyAction: string | undefined, threadPath: string, origin: URL): URL {
+  const target = new URL(replyAction || `${threadPath}add-reply`, origin);
+  if (target.origin !== origin.origin || !/\/add-reply$/.test(target.pathname)) {
+    throw new BhwThreadError("The live quick-reply form has an invalid action URL.");
+  }
+  return target;
 }
 
 /* ---------------------------------------------------------------------------
@@ -349,7 +364,7 @@ function extractPostIdFromResponse(
   // XF2 returns the new post inside json.html or a redirect URL containing #post-{id}.
   const redirect =
     typeof json.redirect === "string" ? json.redirect : "";
-  const match = redirect.match(/#post-(\d+)/);
+  const match = redirect.match(/(?:#|\/)post-(\d+)/);
   if (match) return parseInt(match[1]!, 10);
 
   if (typeof json.post === "number") return json.post;

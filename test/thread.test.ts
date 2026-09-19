@@ -88,10 +88,12 @@ describe("parseBhwThreadPage", () => {
 
   test("recognizes an enabled quick-reply form", () => {
     const html = threadPageHtml() + `
-      <form class="js-quickReply" action="/threads/test-thread.999/add-reply">
+      <form class="js-quickReply" action="/seo/test-thread.999/add-reply">
         <textarea name="message"></textarea>
       </form>`;
-    expect(parseBhwThreadPage(html, 999, "test-thread").canReply).toBe(true);
+    const page = parseBhwThreadPage(html, 999, "test-thread");
+    expect(page.canReply).toBe(true);
+    expect(page.replyAction).toBe("/seo/test-thread.999/add-reply");
   });
 
   test("does not mark a closed thread as replyable", () => {
