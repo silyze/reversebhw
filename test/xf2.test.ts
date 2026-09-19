@@ -66,6 +66,10 @@ describe("xfHasError", () => {
     expect(xfHasError({ status: "error" })).toBe(true);
   });
 
+  test("true when BHW supplies an error list without an error status", () => {
+    expect(xfHasError({ status: "ok", errors: ["Please wait before posting."] })).toBe(true);
+  });
+
   test("false when status is ok", () => {
     expect(xfHasError({ status: "ok" })).toBe(false);
   });

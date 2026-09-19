@@ -322,7 +322,11 @@ describe("replyToBhwThread", () => {
       lastDate: 1700000000,
     });
 
-    expect(result).toEqual({ postId: 98765, redirect: "/seo/test-thread.999/post-98765" });
+    expect(result).toEqual({
+      postId: 98765,
+      redirect: "/seo/test-thread.999/post-98765",
+      responseStatus: "ok",
+    });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url.pathname).toBe("/seo/test-thread.999/add-reply");
     expect(calls[0]!.init?.headers?.referer).toBe("https://www.blackhatworld.com/seo/test-thread.999/");

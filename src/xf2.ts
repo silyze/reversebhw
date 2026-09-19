@@ -100,8 +100,8 @@ export function parseXfJson(body: unknown): Record<string, unknown> {
 
 /** Check whether an XF2 JSON response reported an error. */
 export function xfHasError(body: Record<string, unknown>): boolean {
-  const status = body.status;
-  return status === "error";
+  if (body.status === "error") return true;
+  return Array.isArray(body.errors) && body.errors.length > 0;
 }
 
 /** Extract the error message from an XF2 error JSON response. */
